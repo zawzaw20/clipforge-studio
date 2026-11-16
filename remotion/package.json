@@ -1,0 +1,12 @@
+{
+  "name": "clipforge-remotion",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {"render": "remotion render src/index.jsx ClipForge"},
+  "dependencies": {
+    "@remotion/cli": "4.0.300",
+    "remotion": "4.0.300",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

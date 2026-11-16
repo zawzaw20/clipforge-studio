@@ -22,3 +22,23 @@ Call `create_video_upload`, PUT the video bytes to the returned `upload_url` wit
 
 ## Important deployment notes
 The API includes optional-engine detection. WhisperX is not installed in the lightweight base image because CUDA/PyTorch wheels are hardware-specific; install WhisperX in a GPU-enabled worker image before enabling production transcription. Jobs currently run in-process and job metadata is stored on the mounted volume. Do not use this single-process configuration for large-scale concurrent workloads; add a durable queue and separate worker service before production launch.
+
+## Dropbox connection
+
+ClipForge supports linking one Dropbox account through OAuth 2.0 with read-only scopes:
+`account_info.read`, `files.metadata.read`, and `files.content.read`. Refresh tokens are encrypted at rest on the persistent volume using a key derived from the private `CLIPFORGE_API_KEY`. Dropbox originals are never modified.
+
+Set these Railway variables on `clipforge-api`:
+- `DROPBOX_APP_KEY`: Dropbox developer app key.
+- `DROPBOX_APP_SECRET`: Dropbox developer app secret.
+- `DROPBOX_REDIRECT_URI`: `https://YOUR-RAILWAY-DOMAIN/dropbox/callback` (must exactly match the OAuth redirect URI configured in the Dropbox developer console).
+- Optional `DROPBOX_MAX_VIDEO_BYTES`: maximum imported file size in bytes (default 8 GiB).
+
+REST flow:
+1. Call `GET /dropbox/connect` with `X-API-Key` and open the returned `authorization_url`.
+2. Approve access on Dropbox. Dropbox redirects to `/dropbox/callback`.
+3. Call `GET /dropbox/videos?path=&recursive=false` with `X-API-Key` to browse.
+4. Call the MCP tool `start_dropbox_video_edit` with the selected Dropbox `path`, or use the REST import workflow once enabled.
+5. Poll `get_video_edit_status` for the finished MP4.
+
+MCP tools added: `dropbox_connection_status`, `get_dropbox_authorization_url`, `list_dropbox_videos`, and `start_dropbox_video_edit`. Disconnect using `POST /dropbox/disconnect` with `X-API-Key`.

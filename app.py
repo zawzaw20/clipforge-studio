@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Background
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP
+from dropbox_integration import router as dropbox_router, list_videos as dropbox_list_videos, import_video as dropbox_import_video
 
 APP_DIR=Path(os.getenv("CLIPFORGE_DATA_DIR","/data"))
 APP_DIR.mkdir(parents=True,exist_ok=True)
@@ -18,7 +19,8 @@ BUCKET=os.getenv("S3_BUCKET","")
 REGION=os.getenv("AWS_DEFAULT_REGION","us-west-2")
 ENDPOINT=os.getenv("S3_ENDPOINT_URL","")
 mcp=FastMCP("ClipForge Studio")
-app=FastAPI(title="ClipForge Studio API",version="0.2.0")
+app=FastAPI(title="ClipForge Studio API",version="0.3.0")
+app.include_router(dropbox_router)
 
 @app.middleware("http")
 async def protect_mcp(request: Request, call_next):
@@ -181,6 +183,55 @@ def get_video_edit_status(job_id: str) -> dict:
     """Get processing stage details and the finished MP4 download URL when ready. Requires HTTP Authorization: Bearer token.""
     try: return read_job(job_id)
     except KeyError: return {"error":"Job not found"}
+
+
+@mcp.tool()
+def dropbox_connection_status() -> dict:
+    """Check whether Dropbox is linked to this ClipForge instance."""
+    from dropbox_integration import TOKEN_FILE
+    return {"connected": TOKEN_FILE.exists()}
+
+@mcp.tool()
+def get_dropbox_authorization_url() -> dict:
+    """Create a Dropbox OAuth authorization link. Open it in a browser, approve read-only access, then list videos."""
+    from dropbox_integration import APP_KEY, APP_SECRET, REDIRECT_URI, API_KEY, STATE_FILE
+    from urllib.parse import urlencode
+    import hmac, hashlib, secrets
+    if not (APP_KEY and APP_SECRET and REDIRECT_URI):
+        return {"error": "Dropbox app credentials are not configured in Railway yet."}
+    nonce = secrets.token_urlsafe(32); issued = int(time.time()); payload = f"{nonce}.{issued}"
+    signature = hmac.new(API_KEY.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    state = payload + "." + signature
+    STATE_FILE.write_text(json.dumps({"state": state, "created": issued}))
+    params = {"client_id": APP_KEY, "response_type": "code", "token_access_type": "offline",
+              "redirect_uri": REDIRECT_URI, "state": state,
+              "scope": "account_info.read files.metadata.read files.content.read"}
+    return {"authorization_url": "https://www.dropbox.com/oauth2/authorize?" + __import__("urllib.parse", fromlist=["urlencode"]).urlencode(params)}
+
+@mcp.tool()
+def list_dropbox_videos(path: str = "", recursive: bool = False, limit: int = 200) -> dict:
+    """List video files in a Dropbox folder. path is an empty string for the Dropbox root."""
+    from dropbox_integration import TOKEN_FILE
+    if not TOKEN_FILE.exists(): return {"error": "Connect Dropbox first using get_dropbox_authorization_url."}
+    return {"videos": dropbox_list_videos(path, recursive, limit)}
+
+@mcp.tool()
+def start_dropbox_video_edit(path: str, captions: bool = True, remove_silence: bool = True, aspect_ratio: str = "original") -> dict:
+    """Download one selected Dropbox video into ClipForge storage and queue it for automatic editing."""
+    from dropbox_integration import TOKEN_FILE
+    if not TOKEN_FILE.exists(): return {"error": "Connect Dropbox first."}
+    jid = uuid.uuid4().hex
+    settings = {"captions": captions, "remove_silence": remove_silence, "aspect_ratio": aspect_ratio, "compute_type": "int8"}
+    def make_job(source_key, opts):
+        j = {"id": jid, "status": "queued", "source_key": source_key, "settings": opts, "created_at": now(), "stages": []}
+        write_job(j)
+        threading.Thread(target=process_job, args=(jid,), daemon=True).start()
+        return {"job_id": jid, "status": "queued"}
+    try:
+        result = dropbox_import_video(path, settings, make_job)
+        return result
+    except Exception as e:
+        return {"error": str(e)[:1000]}
 
 # MCP Streamable HTTP endpoint is served by the same ASGI application.
 app.mount("/mcp",mcp.streamable_http_app())

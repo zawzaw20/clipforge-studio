@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 import boto3
 from botocore.config import Config
-from fastapi import FastAPI, HTTPException, Header, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP
@@ -19,6 +19,15 @@ REGION=os.getenv("AWS_DEFAULT_REGION","us-west-2")
 ENDPOINT=os.getenv("S3_ENDPOINT_URL","")
 mcp=FastMCP("ClipForge Studio")
 app=FastAPI(title="ClipForge Studio API",version="0.2.0")
+
+@app.middleware("http")
+async def protect_mcp(request: Request, call_next):
+    if request.url.path.startswith("/mcp"):
+        auth=request.headers.get("authorization","")
+        supplied=auth[7:] if auth.lower().startswith("bearer ") else ""
+        if not API_KEY or not secrets.compare_digest(supplied,API_KEY):
+            return JSONResponse(status_code=401,content={"detail":"Unauthorized MCP connection"})
+    return await call_next(request)
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def require_key(key):
@@ -148,32 +157,28 @@ def job_status(jid: str, x_api_key: Optional[str]=Header(default=None)):
     except KeyError: raise HTTPException(404,"Job not found")
 
 @mcp.tool()
-def clipforge_health(api_key: str) -> dict:
-    """Check ClipForge API and installed editing engines."""
-    require_key(api_key)
+def clipforge_health() -> dict:
+    """Check ClipForge API and installed editing engines. Requires HTTP Authorization: Bearer token."""
     return {"service":"ClipForge Studio","status":"ok","engines":{n:available(n) for n in ["ffmpeg","ffprobe","whisperx","scenedetect","auto-editor"]},"storage_configured":bool(BUCKET)}
 
 @mcp.tool()
-def create_video_upload(api_key: str, filename: str, content_type: str="video/mp4") -> dict:
-    """Create a temporary S3 upload URL. Upload the video bytes to upload_url using HTTP PUT, then pass source_key to start_video_edit."""
-    require_key(api_key)
+def create_video_upload(filename: str, content_type: str="video/mp4") -> dict:
+    """Create a temporary S3 upload URL. Upload the video bytes to upload_url using HTTP PUT, then pass source_key to start_video_edit. Requires HTTP Authorization: Bearer token.""
     ext=Path(filename).suffix or ".mp4"; key=f"uploads/{uuid.uuid4().hex}{ext}"
     url=s3().generate_presigned_url("put_object",Params={"Bucket":BUCKET,"Key":key,"ContentType":content_type},ExpiresIn=3600)
     return {"upload_url":url,"source_key":key,"method":"PUT","content_type":content_type,"expires_in":3600}
 
 @mcp.tool()
-def start_video_edit(api_key: str, source_key: str, captions: bool=True, remove_silence: bool=True, aspect_ratio: str="original") -> dict:
-    """Queue an automatic video edit for an already uploaded source_key."""
-    require_key(api_key)
+def start_video_edit(source_key: str, captions: bool=True, remove_silence: bool=True, aspect_ratio: str="original") -> dict:
+    """Queue an automatic video edit for an already uploaded source_key. Requires HTTP Authorization: Bearer token.""
     jid=uuid.uuid4().hex
     j={"id":jid,"status":"queued","source_key":source_key,"settings":{"captions":captions,"remove_silence":remove_silence,"aspect_ratio":aspect_ratio,"compute_type":"int8"},"created_at":now(),"stages":[]}
     write_job(j); threading.Thread(target=process_job,args=(jid,),daemon=True).start()
     return {"job_id":jid,"status":"queued"}
 
 @mcp.tool()
-def get_video_edit_status(api_key: str, job_id: str) -> dict:
-    """Get processing stage details and the finished MP4 download URL when ready."""
-    require_key(api_key)
+def get_video_edit_status(job_id: str) -> dict:
+    """Get processing stage details and the finished MP4 download URL when ready. Requires HTTP Authorization: Bearer token.""
     try: return read_job(job_id)
     except KeyError: return {"error":"Job not found"}
 

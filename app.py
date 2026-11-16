@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 APP_DIR=Path(os.getenv("CLIPFORGE_DATA_DIR","/data"))
 APP_DIR.mkdir(parents=True,exist_ok=True)
 JOBS=APP_DIR/"jobs"; JOBS.mkdir(exist_ok=True)
-WORK=APP_DIR/"work"; WORK.mkdir(exist_ok=True)
+WORK=Path(os.getenv("CLIPFORGE_WORK_DIR","/tmp/clipforge-work")); WORK.mkdir(parents=True,exist_ok=True)
 API_KEY=os.getenv("CLIPFORGE_API_KEY","")
 BUCKET=os.getenv("S3_BUCKET","")
 REGION=os.getenv("AWS_DEFAULT_REGION","us-west-2")

@@ -158,7 +158,7 @@ def job_status(jid: str, x_api_key: Optional[str]=Header(default=None)):
 
 @mcp.tool()
 def clipforge_health() -> dict:
-    """Check ClipForge API and installed editing engines. Requires HTTP Authorization: Bearer token."""
+    """Check ClipForge API and installed editing engines. Requires HTTP Authorization: Bearer token.""""
     return {"service":"ClipForge Studio","status":"ok","engines":{n:available(n) for n in ["ffmpeg","ffprobe","whisperx","scenedetect","auto-editor"]},"storage_configured":bool(BUCKET)}
 
 @mcp.tool()

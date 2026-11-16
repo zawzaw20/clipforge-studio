@@ -160,19 +160,19 @@ def job_status(jid: str, x_api_key: Optional[str]=Header(default=None)):
 
 @mcp.tool()
 def clipforge_health() -> dict:
-    """Check ClipForge API and installed editing engines. Requires HTTP Authorization: Bearer token.""""
+    """Check ClipForge API and installed editing engines. Requires HTTP Authorization: Bearer token."""
     return {"service":"ClipForge Studio","status":"ok","engines":{n:available(n) for n in ["ffmpeg","ffprobe","whisperx","scenedetect","auto-editor"]},"storage_configured":bool(BUCKET)}
 
 @mcp.tool()
 def create_video_upload(filename: str, content_type: str="video/mp4") -> dict:
-    """Create a temporary S3 upload URL. Upload the video bytes to upload_url using HTTP PUT, then pass source_key to start_video_edit. Requires HTTP Authorization: Bearer token.""
+    """Create a temporary S3 upload URL. Upload the video bytes to upload_url using HTTP PUT, then pass source_key to start_video_edit. Requires HTTP Authorization: Bearer token."""
     ext=Path(filename).suffix or ".mp4"; key=f"uploads/{uuid.uuid4().hex}{ext}"
     url=s3().generate_presigned_url("put_object",Params={"Bucket":BUCKET,"Key":key,"ContentType":content_type},ExpiresIn=3600)
     return {"upload_url":url,"source_key":key,"method":"PUT","content_type":content_type,"expires_in":3600}
 
 @mcp.tool()
 def start_video_edit(source_key: str, captions: bool=True, remove_silence: bool=True, aspect_ratio: str="original") -> dict:
-    """Queue an automatic video edit for an already uploaded source_key. Requires HTTP Authorization: Bearer token.""
+    """Queue an automatic video edit for an already uploaded source_key. Requires HTTP Authorization: Bearer token."""
     jid=uuid.uuid4().hex
     j={"id":jid,"status":"queued","source_key":source_key,"settings":{"captions":captions,"remove_silence":remove_silence,"aspect_ratio":aspect_ratio,"compute_type":"int8"},"created_at":now(),"stages":[]}
     write_job(j); threading.Thread(target=process_job,args=(jid,),daemon=True).start()
@@ -180,7 +180,7 @@ def start_video_edit(source_key: str, captions: bool=True, remove_silence: bool=
 
 @mcp.tool()
 def get_video_edit_status(job_id: str) -> dict:
-    """Get processing stage details and the finished MP4 download URL when ready. Requires HTTP Authorization: Bearer token.""
+    """Get processing stage details and the finished MP4 download URL when ready. Requires HTTP Authorization: Bearer token."""
     try: return read_job(job_id)
     except KeyError: return {"error":"Job not found"}
 

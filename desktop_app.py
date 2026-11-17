@@ -96,6 +96,16 @@ def list_videos(app_key, folder):
         data=dbx_call(app_key,"files/list_folder/continue",{"cursor":data["cursor"]})
     return found
 
+class OAuthWorker(QThread):
+    message=Signal(str)
+    def __init__(self, app_key): super().__init__(); self.app_key=app_key
+    def run(self):
+        try:
+            DropboxOAuth(self.app_key).connect()
+            self.message.emit("Dropbox connected · read-only access.")
+        except Exception as e:
+            self.message.emit("Dropbox connection failed: "+str(e))
+
 class EditorWorker(QThread):
     progress=Signal(str,int); done=Signal(list); failed=Signal(str)
     def __init__(self,source,out,captions,silence,vertical):
@@ -187,11 +197,9 @@ class MainWindow(QMainWindow):
         key=self.appkey.text().strip()
         if not key: QMessageBox.warning(self,"Dropbox","Create a Dropbox app and enter its App key."); return
         self.cfg["dropbox_app_key"]=key; config_write(self.cfg); self.status.setText("Opening Dropbox authorization…")
-        import threading
-        def go():
-            try: DropboxOAuth(key).connect(); self.status.setText("Dropbox connected.")
-            except Exception as e: self.status.setText("Dropbox: "+str(e))
-        threading.Thread(target=go,daemon=True).start()
+        self.oauth_worker=OAuthWorker(key)
+        self.oauth_worker.message.connect(self.status.setText)
+        self.oauth_worker.start()
     def browse_dbx(self):
         try:
             self.dbx=list_videos(self.appkey.text().strip(),self.folder.text().strip()); self.dbfiles.clear()

@@ -235,5 +235,9 @@ class MainWindow(QMainWindow):
         self.go.setEnabled(True); self.status.setText("Processing failed."); QMessageBox.critical(self,"ClipForge error",msg)
 
 def main():
+    # Prefer the FFmpeg binaries bundled beside the packaged executable.
+    bundle_tools = Path(sys.executable).resolve().parent / "tools"
+    if bundle_tools.exists():
+        os.environ["PATH"] = str(bundle_tools) + os.pathsep + os.environ.get("PATH", "")
     app=QApplication(sys.argv); app.setApplicationName(APP); w=MainWindow(); w.show(); sys.exit(app.exec())
 if __name__=="__main__": main()
